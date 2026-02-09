@@ -7,7 +7,7 @@
 #define COLOR_ORDER GRB
 CRGB leds[NUM_LEDS];
 
-#define UPDATES_PER_SECOND 30
+#define UPDATES_PER_SECOND 24
 
 #define SENSOR_MAX 1024
 #define SENSOR_MIN 0
