@@ -69,6 +69,7 @@ void clearLeds(){
 }
 
 int smooth(int newValue){
-  filteredValue = (filteredValue * 7 + newValue) / 8;
+  filteredValue =
+        (filteredValue * 179 + newValue * 77) >> 8;
   return filteredValue;
 }
