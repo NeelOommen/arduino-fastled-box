@@ -2,10 +2,11 @@
 
 #define LED_PIN     5
 #define NUM_LEDS    64
-#define BRIGHTNESS  8
+#define BRIGHTNESS  32
 #define LED_TYPE    WS2812B
 #define COLOR_ORDER GRB
 CRGB leds[NUM_LEDS];
+CRGB colorMap[NUM_LEDS];
 
 #define UPDATES_PER_SECOND 24
 
@@ -19,25 +20,22 @@ int filteredValue = 0;
 
 int display[8];
 
+void fillRainbowPalette();
+
 void setup() {
   delay( 3000 ); // power-up safety delay
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection( TypicalLEDStrip );
   FastLED.setBrightness(  BRIGHTNESS );
-  
   // Serial.begin(9600);
+  fillRainbowPalette(0);
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
   sensorValue = analogRead(sensorPin);
   int ledCount = mapSensorReadToLEDCount(sensorValue, 18);
-  // Serial.print("Sensor value: ");
-  // Serial.print(sensorValue);
-  // Serial.print(",Mapped value: ");
-  // Serial.println(ledCount);
-
+ 
   ledCount = smooth(ledCount);
-  // printarr();
+
   shiftInNewValueToDisp(ledCount);
   drawVisualizer();
 }
@@ -97,7 +95,7 @@ void setLed(int x, int y){
   if(x >= 8 || y >= 8){
     return;
   }
-  leds[x * 8 + y] = CRGB::Red;
+  leds[x * 8 + y] = colorMap[x * 8 + y];
 }
 
 void shiftInNewValueToDisp(int newValue){
@@ -107,11 +105,11 @@ void shiftInNewValueToDisp(int newValue){
   display[7] = newValue;
 }
 
-// void printarr(){
-//   Serial.print("Arr: ");
-//   for(int i = 0; i < 8; i++){
-//     Serial.print(display[i]);
-//     Serial.print(" ");
-//   }
-//   Serial.println(".");
-// }
+void fillRainbowPalette(uint8_t colorIndex){
+  uint8_t brightness = 255;
+    
+  for( int i = 0; i < NUM_LEDS; ++i) {
+    colorMap[i] = ColorFromPalette( RainbowColors_p, colorIndex, brightness, LINEARBLEND);
+    colorIndex += 3;
+  }
+}
