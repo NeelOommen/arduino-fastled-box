@@ -8,10 +8,11 @@
 CRGB leds[NUM_LEDS];
 CRGB colorMap[NUM_LEDS];
 
-#define UPDATES_PER_SECOND 30
+#define UPDATES_PER_SECOND 24
 
 #define SENSOR_MAX 1024
 #define SENSOR_MIN 0
+#define DEAD_ZONE 120
 
 int sensorPin = A1; 
 int sensorValue = 0;
@@ -19,6 +20,11 @@ int sensorValue = 0;
 int filteredValue = 0;
 
 int display[8];
+
+uint32_t lastFrameTime = 0;
+const uint32_t FRAME_INTERVAL = 1000 / UPDATES_PER_SECOND;
+
+int framePeak = 0;
 
 void fillRainbowPalette();
 
@@ -32,17 +38,27 @@ void setup() {
 
 void loop() {
   sensorValue = analogRead(sensorPin);
-  int ledCount = mapSensorReadToLEDCount(sensorValue, 24);
+  int ledCount = mapSensorReadToLEDCount(sensorValue, 18);
  
   ledCount = smooth(ledCount);
 
-  shiftInNewValueToDisp(ledCount);
-  drawVisualizer();
+  if (ledCount > framePeak){
+    framePeak = ledCount;
+  }
+
+  uint32_t now = millis();
+
+  if (now - lastFrameTime >= FRAME_INTERVAL) {
+    lastFrameTime = now;
+
+    shiftInNewValueToDisp(framePeak);
+    drawVisualizer();
+
+    framePeak = 0;
+  }
 }
 
 int mapSensorReadToLEDCount(int sensorValue, int maxVal) {
-    const int DEAD_ZONE = 40;
-
     if (sensorValue <= SENSOR_MIN + DEAD_ZONE)
         return 0;
 
@@ -87,7 +103,6 @@ void drawVisualizer(){
   }
 
   FastLED.show();
-  FastLED.delay(1000 / UPDATES_PER_SECOND);
 }
 
 void setLed(int x, int y){
