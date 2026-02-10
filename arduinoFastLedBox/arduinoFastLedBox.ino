@@ -8,7 +8,7 @@
 CRGB leds[NUM_LEDS];
 CRGB colorMap[NUM_LEDS];
 
-#define UPDATES_PER_SECOND 24
+#define UPDATES_PER_SECOND 30
 
 #define SENSOR_MAX 1024
 #define SENSOR_MIN 0
@@ -32,7 +32,7 @@ void setup() {
 
 void loop() {
   sensorValue = analogRead(sensorPin);
-  int ledCount = mapSensorReadToLEDCount(sensorValue, 18);
+  int ledCount = mapSensorReadToLEDCount(sensorValue, 24);
  
   ledCount = smooth(ledCount);
 
@@ -72,10 +72,9 @@ void clearLeds(){
   }
 }
 
-int smooth(int newValue){
-  filteredValue =
-        (filteredValue * 179 + newValue * 77) >> 8;
-  return filteredValue;
+int smooth(int newValue) {
+    filteredValue = (filteredValue * 7 + newValue) / 8;
+    return filteredValue;
 }
 
 void drawVisualizer(){
