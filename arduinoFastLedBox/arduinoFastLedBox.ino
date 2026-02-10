@@ -42,6 +42,8 @@ int framePeak = 0;
 double vReal[FFT_SIZE];
 double vImag[FFT_SIZE];
 
+float bandPeak[8] = {1,1,1,1,1,1,1,1};
+
 ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal, vImag, FFT_SIZE, SAMPLE_RATE);
 
 uint16_t sampleIndex = 0;
@@ -163,12 +165,28 @@ void computeFFTBands() {
       sum += vReal[i];
     }
 
-    int value = sum / (bandLimits[band + 1] - bandLimits[band]);
+    float value = sum / (bandLimits[band + 1] - bandLimits[band]);
+    value *= 3.0;
+    value *= (1.0 + band * 0.15);
 
-    // simple scaling (we'll improve later)
-    value = value / 20;
+    // --- update peak (fast attack)
+    if (value > bandPeak[band]) {
+      bandPeak[band] = value;
+    }
+
+    // --- slow decay of peak (auto gain control)
+    bandPeak[band] *= 0.999;
+
+    // prevent collapse
+    if (bandPeak[band] < 1){
+      bandPeak[band] = 1;
+    }
+
+    // --- normalize to display height
+    value = (value / bandPeak[band]) * 8;
 
     if (value > 8) value = 8;
+    if (value < 0) value = 0;
 
     targetDisplay[band] = (targetDisplay[band] * 3 + value) / 4;
   }
