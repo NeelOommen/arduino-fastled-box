@@ -13,11 +13,11 @@
 CRGB leds[NUM_LEDS];
 CRGB colorMap[NUM_LEDS];
 
-#define UPDATES_PER_SECOND 24
+#define UPDATES_PER_SECOND 60
 
 #define SENSOR_MAX 1024
 #define SENSOR_MIN 0
-#define DEAD_ZONE 120
+#define DEAD_ZONE 400
 
 enum VisualizationMode {
   VIS_AMPLITUDE,
@@ -111,7 +111,7 @@ void updateVisualization() {
 }
 
 void updateAmplitude() {
-  int ledCount = smooth(mapSensorReadToLEDCount(sensorValue, 20));
+  int ledCount = smooth(mapSensorReadToLEDCount(sensorValue, 16));
   if (ledCount > framePeak){
     framePeak = ledCount;
   }
@@ -166,7 +166,7 @@ void computeFFTBands() {
     }
 
     float value = sum / (bandLimits[band + 1] - bandLimits[band]);
-    value *= 3.0;
+    value *= 16.0;
     value *= (1.0 + band * 0.15);
 
     // --- update peak (fast attack)
@@ -175,7 +175,7 @@ void computeFFTBands() {
     }
 
     // --- slow decay of peak (auto gain control)
-    bandPeak[band] *= 0.999;
+    bandPeak[band] *= 0.995;
 
     // prevent collapse
     if (bandPeak[band] < 1){
