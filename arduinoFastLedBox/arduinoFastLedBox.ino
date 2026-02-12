@@ -7,21 +7,36 @@
 
 #define LED_PIN     5
 #define NUM_LEDS    64
-#define BRIGHTNESS  8
+#define BRIGHTNESS  32
 #define LED_TYPE    WS2812B
 #define COLOR_ORDER GRB
 CRGB leds[NUM_LEDS];
 CRGB colorMap[NUM_LEDS];
 
-#define UPDATES_PER_SECOND 30
-
 #define SENSOR_MAX 1024
 #define SENSOR_MIN 0
+
+#define NOISE_FLOOR 256
+
+#define COLOR_BUTTON 7
+#define VIS_BUTTON 9
 
 enum VisualizationMode {
   VIS_AMPLITUDE,
   VIS_FFT
 };
+
+enum Palettes {
+  RAINBOW,
+  BLUE,
+  BUTTER,
+  COKE,
+  CHARTREUSE,
+  WHITE,
+  PURPLE
+};
+
+Palettes currentPalette = BUTTER;
 
 VisualizationMode currentMode = VIS_FFT;
 
@@ -33,11 +48,16 @@ int deadZonePin = A3;
 
 int filteredValue = 0;
 
+byte colorLastButtonState = HIGH;
+byte visLastButtonState = HIGH;
+unsigned long debounceDuration = 50; // millis
+unsigned long colorLastTimeButtonStateChanged = 0;
+unsigned long visLastTimeButtonStateChanged = 0;
+
 int display[8];
 int targetDisplay[8];
 
 uint32_t lastFrameTime = 0;
-const uint32_t FRAME_INTERVAL = 1000 / UPDATES_PER_SECOND;
 
 int framePeak = 0;
 
@@ -51,11 +71,13 @@ ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal, vImag, FFT_SIZE, SAMPLE_RATE)
 uint16_t sampleIndex = 0;
 uint32_t lastSampleMicros = 0;
 bool fftReady = false;
+bool colorButtonReady = true;
 
-void fillRainbowPalette();
+void fillRainbowPalette(uint8_t colorIndex);
 
 void setup() {
   delay( 3000 ); // power-up safety delay
+  pinMode(COLOR_BUTTON, INPUT_PULLUP);
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection( TypicalLEDStrip );
   FastLED.setBrightness(  BRIGHTNESS );
   fillRainbowPalette(0);
@@ -82,6 +104,9 @@ void loop() {
     }
   }
 
+  updatePaletteChoice();
+  // updateVisChoice();
+
   updateVisualization();
 
   if (frameReady()) {
@@ -95,6 +120,65 @@ void loop() {
     }
 
     drawVisualizer();
+  }
+}
+
+void updatePaletteChoice(){
+  if (millis() - colorLastTimeButtonStateChanged > debounceDuration) {
+    byte colorButtonState = digitalRead(COLOR_BUTTON);
+    if (colorButtonState != colorLastButtonState) {
+      colorLastTimeButtonStateChanged = millis();
+      colorLastButtonState = colorButtonState;
+      if(colorButtonState == LOW){
+        rotatePalette();
+      }
+    }
+  }
+}
+
+void updateVisChoice(){
+  if (millis() - visLastTimeButtonStateChanged > debounceDuration) {
+    byte visButtonState = digitalRead(VIS_BUTTON);
+    if (visButtonState != visLastButtonState) {
+      visLastTimeButtonStateChanged = millis();
+      visLastButtonState = visButtonState;
+      if(visButtonState == LOW){
+        rotateVis();
+      }
+    }
+  }
+}
+
+void rotateVis(){
+  if(currentMode == VIS_FFT){
+    currentMode = VIS_AMPLITUDE;
+  }
+  else if(currentMode == VIS_AMPLITUDE){
+    currentMode = VIS_FFT;
+  }
+}
+
+void rotatePalette(){
+  if(currentPalette == BUTTER){
+    currentPalette = RAINBOW;
+  }
+  else if(currentPalette == RAINBOW){
+    currentPalette = BLUE;
+  }
+  else if(currentPalette == BLUE){
+    currentPalette = COKE;
+  }
+  else if(currentPalette == COKE){
+    currentPalette = CHARTREUSE;
+  }
+  else if(currentPalette == CHARTREUSE){
+    currentPalette = WHITE;
+  }
+  else if(currentPalette == WHITE){
+    currentPalette = PURPLE;
+  }
+  else if(currentPalette == PURPLE){
+    currentPalette = BUTTER;
   }
 }
 
@@ -153,29 +237,39 @@ int mapSensorReadToLEDCount(int sensorValue, int maxVal) {
 
 void computeFFTBands() {
 
-  uint8_t bandLimits[9] = {
-    2, 3, 5, 7, 10, 14, 20, 26, 31
-  };
+  uint8_t bandFloors[8] = {500, 500, 500, 500, 200, 200, 200, 200};
 
   for (int band = 0; band < 8; band++) {
 
     double sum = 0;
 
-    for (int i = bandLimits[band]; i < bandLimits[band + 1];i++) {
-      sum += vReal[i];
+    for (int i = band; i < band + 4;i++) {
+      double toAdd = vReal[i];
+      if(i == 0 || i == 1){
+        toAdd = vReal[2];
+      }
+      sum += toAdd;
     }
 
-    float value = sum / (bandLimits[band + 1] - bandLimits[band]);
-    value *= (float) getSensitivity();
-    value *= (1.0 + band * 0.25);
+    float value = sum / 4.0;
+
+    if(value < bandFloors[band]){
+      value=0;
+    }
+
+    int sens = getSensitivity();
+    value *= (float) sens + (((8-band) / 2) * 0.2);
+    value *= (1.0 + band * 0.15); 
 
     // --- update peak (fast attack)
     if (value > bandPeak[band]) {
-      bandPeak[band] = value;
+      bandPeak[band] = bandPeak[band] * 0.8 + value * 0.2;
     }
 
     // --- slow decay of peak (auto gain control)
-    bandPeak[band] *= 0.96;
+    int dead = getDeadzone();
+    // dead -= (((8 - band) / 2) * 1);
+    bandPeak[band] *= dead / 1000.0;
 
     // prevent collapse
     if (bandPeak[band] < 1){
@@ -183,7 +277,7 @@ void computeFFTBands() {
     }
 
     // --- normalize to display height
-    value = (value / bandPeak[band]) * 8;
+    value = (value / (bandPeak[band] * 0.75)) * 8;
 
     if (value > 8) value = 8;
     if (value < 0) value = 0;
@@ -211,6 +305,9 @@ void applySmoothingAndDecay() {
       if (display[i] < 0)
         display[i] = 0;
     }
+    else{
+      display[i] = targetDisplay[i];
+    }
   }
 }
 
@@ -235,7 +332,7 @@ int getSensitivity(){
       break;
     }
     case VIS_FFT:{
-      mappedValue = mapValue(sensitivityRawValue, 0, 1024, 8, 32);
+      mappedValue = mapValue(sensitivityRawValue, 0, 1024, 1, 20);
       break;
     }
     default: {
@@ -255,7 +352,7 @@ int getDeadzone(){
       break;
     }
     case VIS_FFT:{
-      mappedValue = mapValue(deadZoneRawValue, 0, 1024, 40, 800);
+      mappedValue = mapValue(deadZoneRawValue, 0, 1024, 900, 999);
       break;
     }
     default: {
@@ -282,6 +379,8 @@ int mapValue(int raw, int inMin, int inMax, int outMin, int outMax){
 void drawVisualizer(){
   clearLeds();
 
+  fillColorPalette();
+
   for(int i = 0; i < 8; i++){
     for(int y = 0; y < display[i]; y++){
       setLed(i,y);
@@ -289,6 +388,30 @@ void drawVisualizer(){
   }
 
   FastLED.show();
+}
+
+void fillColorPalette(){
+  if(currentPalette == RAINBOW){
+    fillRainbowPalette(0);
+  }
+  else if(currentPalette == BLUE){
+    fillBluePalette();
+  }
+  else if(currentPalette == COKE){
+    fillCokePalette();
+  }
+  else if(currentPalette == BUTTER){
+    fillButterPalette();
+  }
+  else if(currentPalette == WHITE){
+    fillWhitePalette();
+  }
+  else if(currentPalette == PURPLE){
+    fillPurplePalette();
+  }
+  else if(currentPalette == CHARTREUSE){
+    fillChartreusePalette();
+  }
 }
 
 void setLed(int x, int y){
@@ -308,7 +431,23 @@ void shiftInNewValueToDisp(int newValue){
 
 bool frameReady(){
   uint32_t now = millis();
-  if(now - lastFrameTime >= FRAME_INTERVAL){
+  int frameRate = 1;
+
+  switch (currentMode) {
+    case VIS_AMPLITUDE:{
+      frameRate = 30;
+      break;
+    }
+    case VIS_FFT:{
+      frameRate = 60;
+      break;
+    }
+    default: {
+      frameRate=1;
+    }
+  }
+
+  if(now - lastFrameTime >= (1000 / frameRate)){
     lastFrameTime = now;
     return true;
   }
@@ -323,5 +462,41 @@ void fillRainbowPalette(uint8_t colorIndex){
   for( int i = 0; i < NUM_LEDS; ++i) {
     colorMap[i] = ColorFromPalette( RainbowColors_p, colorIndex, brightness, LINEARBLEND);
     colorIndex += 3;
+  }
+}
+
+void fillBluePalette(){
+  for( int i = 0; i < NUM_LEDS; ++i) {
+    colorMap[i] = CRGB(0,16,250);
+  }
+}
+
+void fillButterPalette(){
+  for( int i = 0; i < NUM_LEDS; ++i) {
+    colorMap[i] = CRGB(255,180,25);
+  }
+}
+
+void fillCokePalette(){
+  for( int i = 0; i < NUM_LEDS; ++i) {
+    colorMap[i] = CRGB(170,7,1);
+  }
+}
+
+void fillChartreusePalette(){
+  for( int i = 0; i < NUM_LEDS; ++i) {
+    colorMap[i] = CRGB(168,238,0);
+  }
+}
+
+void fillWhitePalette(){
+  for( int i = 0; i < NUM_LEDS; ++i) {
+    colorMap[i] = CRGB(255,255,255);
+  }
+}
+
+void fillPurplePalette(){
+  for( int i = 0; i < NUM_LEDS; ++i) {
+    colorMap[i] = CRGB(106,0,255);
   }
 }
