@@ -17,17 +17,19 @@ CRGB colorMap[NUM_LEDS];
 
 #define SENSOR_MAX 1024
 #define SENSOR_MIN 0
-#define DEAD_ZONE 400
 
 enum VisualizationMode {
   VIS_AMPLITUDE,
   VIS_FFT
 };
 
-VisualizationMode currentMode = VIS_AMPLITUDE;
+VisualizationMode currentMode = VIS_FFT;
 
 int sensorPin = A1; 
 int sensorValue = 0;
+
+int sensitivityPin = A4;
+int deadZonePin = A3;
 
 int filteredValue = 0;
 
@@ -111,7 +113,7 @@ void updateVisualization() {
 }
 
 void updateAmplitude() {
-  int ledCount = smooth(mapSensorReadToLEDCount(sensorValue, 16));
+  int ledCount = smooth(mapSensorReadToLEDCount(sensorValue, getSensitivity()));
   if (ledCount > framePeak){
     framePeak = ledCount;
   }
@@ -133,14 +135,14 @@ void updateFFT() {
 }
 
 int mapSensorReadToLEDCount(int sensorValue, int maxVal) {
-    if (sensorValue <= SENSOR_MIN + DEAD_ZONE)
+    if (sensorValue <= SENSOR_MIN + getDeadzone())
         return 0;
 
     long adjusted =
-        sensorValue - (SENSOR_MIN + DEAD_ZONE);
+        sensorValue - (SENSOR_MIN + getDeadzone());
 
     long range =
-        (SENSOR_MAX - SENSOR_MIN - DEAD_ZONE);
+        (SENSOR_MAX - SENSOR_MIN - getDeadzone());
 
     long normalized = adjusted * 1024 / range;
 
@@ -159,14 +161,12 @@ void computeFFTBands() {
 
     double sum = 0;
 
-    for (int i = bandLimits[band];
-         i < bandLimits[band + 1];
-         i++) {
+    for (int i = bandLimits[band]; i < bandLimits[band + 1];i++) {
       sum += vReal[i];
     }
 
     float value = sum / (bandLimits[band + 1] - bandLimits[band]);
-    value *= 16.0;
+    value *= (float) getSensitivity();
     value *= (1.0 + band * 0.25);
 
     // --- update peak (fast attack)
@@ -223,6 +223,57 @@ void clearLeds(){
 int smooth(int newValue) {
     filteredValue = (filteredValue * 7 + newValue) / 8;
     return filteredValue;
+}
+
+int getSensitivity(){
+  int sensitivityRawValue = analogRead(sensitivityPin);
+  int mappedValue = 0;
+
+  switch (currentMode) {
+    case VIS_AMPLITUDE:{
+      mappedValue = mapValue(sensitivityRawValue, 0, 1024, 8, 32);
+      break;
+    }
+    case VIS_FFT:{
+      mappedValue = mapValue(sensitivityRawValue, 0, 1024, 8, 32);
+      break;
+    }
+    default: {
+      mappedValue=0;
+    }
+  }
+  return mappedValue;
+}
+
+int getDeadzone(){
+  int deadZoneRawValue = analogRead(deadZonePin);
+  int mappedValue = 0;
+
+  switch (currentMode) {
+    case VIS_AMPLITUDE:{
+      mappedValue = mapValue(deadZoneRawValue, 0, 1024, 40, 800);
+      break;
+    }
+    case VIS_FFT:{
+      mappedValue = mapValue(deadZoneRawValue, 0, 1024, 40, 800);
+      break;
+    }
+    default: {
+      mappedValue=0;
+    }
+  }
+
+  return mappedValue;
+}
+
+int mapValue(int raw, int inMin, int inMax, int outMin, int outMax){
+  if (raw < inMin) raw = inMin;
+  if (raw > inMax) raw = inMax;
+  if (inMax == inMin) return outMin;
+
+  long value = (long)(raw - inMin) * (outMax - outMin);
+  value /= (inMax - inMin);
+  return (int)(value + outMin);
 }
 
 
