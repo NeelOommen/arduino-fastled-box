@@ -13,7 +13,7 @@
 CRGB leds[NUM_LEDS];
 CRGB colorMap[NUM_LEDS];
 
-#define UPDATES_PER_SECOND 60
+#define UPDATES_PER_SECOND 30
 
 #define SENSOR_MAX 1024
 #define SENSOR_MIN 0
@@ -24,7 +24,7 @@ enum VisualizationMode {
   VIS_FFT
 };
 
-VisualizationMode currentMode = VIS_FFT;
+VisualizationMode currentMode = VIS_AMPLITUDE;
 
 int sensorPin = A1; 
 int sensorValue = 0;
@@ -167,7 +167,7 @@ void computeFFTBands() {
 
     float value = sum / (bandLimits[band + 1] - bandLimits[band]);
     value *= 16.0;
-    value *= (1.0 + band * 0.15);
+    value *= (1.0 + band * 0.25);
 
     // --- update peak (fast attack)
     if (value > bandPeak[band]) {
@@ -175,7 +175,7 @@ void computeFFTBands() {
     }
 
     // --- slow decay of peak (auto gain control)
-    bandPeak[band] *= 0.995;
+    bandPeak[band] *= 0.96;
 
     // prevent collapse
     if (bandPeak[band] < 1){
@@ -244,7 +244,7 @@ void setLed(int x, int y){
   if(x >= 8 || y >= 8){
     return;
   }
-  leds[x * 8 + y] = colorMap[x * 8 + y];
+  leds[(7-x) * 8 + (7-y)] = colorMap[x * 8 + y];
 }
 
 void shiftInNewValueToDisp(int newValue){
